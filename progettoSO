@@ -1,36 +1,21 @@
-/*Passi da fare
-1. Aggiungere il supporto per più CPU configurabili
-    Introdurre una struttura per rappresentare le CPU e tenere traccia degli stati della CPU.
-    Adattiamo anche il meccanismo di scheduling per selezionare il processo più breve da ese-
-    guire
-2. Preemptive Shortest Job First
-    Definire la funzione di scheduling.*/
-
-#include <stdlib.h>
-#include <stdio.h>
-#include <assert.h>
-
-#include "fake_os.h"
-
-//Sruttura per rappresentare la CPU
-typedeg struct{
-    FakeFCB* running_process;
+ypedef struct{
+    FakePCB* running_process;
     int quantum_prediction;
 }FakeCPU;
 
 void FakeOS_init(FakeOS* os, int num_cpus) {
-    os->num_cpus=num_cpus; //MODIFICATO
-    os->cpus= (FaceCPU*) malloc(num_cpus*sizeof(FaceCPU)); //MODIFICATO
-    for (int i=0; i<num_cpus; ++i){ //MODIFICATO
-        os->cpus[i].running_process=NULL;
-        os->cpus[i].quantum_prediction=0;
-    }
-  os->running=0;
+  os->running=NULL;
   List_init(&os->ready);
   List_init(&os->waiting);
   List_init(&os->processes);
   os->timer=0;
   os->schedule_fn=0;
+  os->num_cpu=num_cpus; //MODIFICATO
+  os->cpus= (FaceCPU*) malloc(num_cpus*sizeof(FaceCPU)); //MODIFICATO
+  for (int i=0; i<num_cpus; ++i){ //MODIFICATO
+    os->cpus[i].running_process=NULL;
+    os->cpus[i].quantum_prediction=0;
+  }
 }
 
 void FakeOS_createProcess(FakeOS* os, FakeProcess* p) {
@@ -77,9 +62,6 @@ void FakeOS_createProcess(FakeOS* os, FakeProcess* p) {
     ;
   }
 }
-
-
-
 
 void FakeOS_simStep(FakeOS* os){
   
@@ -179,7 +161,7 @@ void FakeOS_simStep(FakeOS* os){
 
   // call schedule, if defined
   if (os->schedule_fn && ! os->running){
-    (*os->schedule_fn)(os, os->schedule_args); 
+    os->schedule_fn(os, os->schedule_args; os->num_cpus, a); 
   }
 
   // if running not defined and ready queue not empty
@@ -197,7 +179,7 @@ void FakeOS_destroy(FakeOS* os) {
 
 //DA QUI IN POI AGGIUNTA PER LO SCHEDULER
 //Funzione di scheduling
-void FakeOS_schedule (FakeOS* os, void* args){
+void FakeOS_schedule (FakeOS* os, void* args, int num_cpus, int a){
     int a= *((int*)args); //Coeff per la previsione del quantum
     //per ogni cpu cerchiamo il processo più breve nella coda
     for(int cpu_index=0; cpu_index<os->num_cpus; ++cpu_index){
@@ -219,6 +201,20 @@ void FakeOS_schedule (FakeOS* os, void* args){
                 }
                 aux=aux->next;
             }
+            //Se il processo più breve è effettivamente piùbreve del processo in esecuzione
+            //sulla CPU allora lo prendiamo in esecuzione e aggiorniamo la previsione del quantum
+            if(shortest_process && shortest_process->events.first-> duration<cpu->quantum_prediction){
+                //Rimettiamo il processo precedente nella coda dei pronti
+                List_pushBack(&os->ready, (ListItem*)cpu->running_process);
+                //Prendiamo in esecuzione il processo più breve trovato
+                cpu->running_process=shortest_process;
+                ProcessEvent* next_event=(ProcessEvent*)cpu->running_process->events.first;
+                cpu->quantum_prediction= a*cpu->quantum_prediction+(1-a)*next_event->duration;
+                List_detach(&os->ready, (ListItem*)shortest_process)
+            }
+        }
+    }
+}
             //Se il processo più breve è effettivamente piùbreve del processo in esecuzione
             //sulla CPU allora lo prendiamo in esecuzione e aggiorniamo la previsione del quantum
             if(shortest_process && shortest_process->events.first-> duration<cpu->quantum_prediction){
