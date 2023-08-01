@@ -179,53 +179,42 @@ void FakeOS_destroy(FakeOS* os) {
 
 //DA QUI IN POI AGGIUNTA PER LO SCHEDULER
 //Funzione di scheduling
-void FakeOS_schedule (FakeOS* os, void* args, int num_cpus, int a){
-    int a= *((int*)args); //Coeff per la previsione del quantum
-    //per ogni cpu cerchiamo il processo più breve nella coda
-    for(int cpu_index=0; cpu_index<os->num_cpus; ++cpu_index){
-        FakeCPU* cpu= &os->cpus[cpu_index];
-        if(!cpu->running_process && os->ready.first){
-            //Se la cpu è inattiva, controlliamo se c'è un processo e lo selezioniamo
-            cpu->running_process= (FakeCPB*)List_popFront(&os->ready);
-            ProcessEvent* next_event= (ProcessEvent*) cpu->running_process->events.first;
-            cpu->quantum_prediction=next_event->duration
-        } else if(cpu->running_process){
-            //Se la cpu è occupata, controlliamo se c'è un processo più breve
-            FakeCPB* shortest_process=(FakePCB*)os->ready.first;
-            ListItem* aux= os->ready.first->next;
-            while(aux){
-                FakePCB* pcb=(FakePCB*) aux;
-                ProcessEvent* next_event=(ProcessEvent*) pcb->events.first;
-                if(next_event->duration<shortest_process->events.first->duration){
-                    shortest_process=pcb;
-                }
-                aux=aux->next;
-            }
-            //Se il processo più breve è effettivamente piùbreve del processo in esecuzione
-            //sulla CPU allora lo prendiamo in esecuzione e aggiorniamo la previsione del quantum
-            if(shortest_process && shortest_process->events.first-> duration<cpu->quantum_prediction){
-                //Rimettiamo il processo precedente nella coda dei pronti
-                List_pushBack(&os->ready, (ListItem*)cpu->running_process);
-                //Prendiamo in esecuzione il processo più breve trovato
-                cpu->running_process=shortest_process;
-                ProcessEvent* next_event=(ProcessEvent*)cpu->running_process->events.first;
-                cpu->quantum_prediction= a*cpu->quantum_prediction+(1-a)*next_event->duration;
-                List_detach(&os->ready, (ListItem*)shortest_process)
-            }
+void FakeOS_schedule(FakeOS* os, int a) {
+  // Per ogni CPU, cerchiamo il processo più breve nella coda di pronti
+  for (int cpu_index = 0; cpu_index < os->num_cpus; ++cpu_index) {
+    FakeCPU* cpu = &os->cpus[cpu_index];
+
+    if (!cpu->running_process && os->ready.first) {
+      // Se la CPU è inattiva e c'è un processo in coda, lo selezioniamo
+      cpu->running_process = (FakePCB*)List_popFront(&os->ready);
+      ProcessEvent* next_event = (ProcessEvent*)cpu->running_process->events.first;
+      cpu->quantum_prediction = next_event->duration;
+    } else if (cpu->running_process) {
+      // Se la CPU è occupata, controlliamo se c'è un processo più breve nella coda di pronti
+      FakePCB* shortest_process = (FakePCB*)os->ready.first;
+      ListItem* aux = os->ready.first->next;
+
+      while (aux) {
+        FakePCB* pcb = (FakePCB*)aux;
+        ProcessEvent* next_event = (ProcessEvent*)pcb->events.first;
+        if (next_event->duration < shortest_process->events.first->duration) {
+          shortest_process = pcb;
         }
+        aux = aux->next;
+      }
+
+      // Se il processo più breve è effettivamente più breve del processo in esecuzione sulla CPU
+      // allora lo prendiamo in esecuzione e aggiorniamo la previsione della quantum
+      if (shortest_process && shortest_process->events.first->duration < cpu->quantum_prediction) {
+        // Rimettiamo il processo precedente nella coda di pronti
+        List_pushBack(&os->ready, (ListItem*)cpu->running_process);
+
+        // Prendiamo in esecuzione il processo più breve trovato
+        cpu->running_process = shortest_process;
+        ProcessEvent* next_event = (ProcessEvent*)cpu->running_process->events.first;
+        cpu->quantum_prediction = a * cpu->quantum_prediction + (1 - a) * next_event->duration;
+        List_detach(&os->ready, (ListItem*)shortest_process);
+      }
     }
-}
-            //Se il processo più breve è effettivamente piùbreve del processo in esecuzione
-            //sulla CPU allora lo prendiamo in esecuzione e aggiorniamo la previsione del quantum
-            if(shortest_process && shortest_process->events.first-> duration<cpu->quantum_prediction){
-                //Rimettiamo il processo precedente nella coda dei pronti
-                List_pushBack(&os->ready, (ListItem*)cpu->running_process);
-                //Prendiamo in esecuzione il processo più breve trovato
-                cpu->running_process=shortest_process;
-                ProcessEvent* next_event=(ProcessEvent*)cpu->running_process->events.first;
-                cpu->quantum_prediction= a*cpu->quantum_prediction+(1-a)*next_event->duration;
-                List_detach(&os->ready, (ListItem*)shortest_process)
-            }
-        }
-    }
+  }
 }
