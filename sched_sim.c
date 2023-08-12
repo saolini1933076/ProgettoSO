@@ -3,6 +3,8 @@
 #include <assert.h>
 #include <math.h>
 #include "fake_os.h"
+#include "fake_process.h"
+#include "linked_list.h"
 
 #define MAX_CPUS 4 //Configurazione del numero massimo di CPU
 FakeOS os[MAX_CPUS]; //Array di simulazioni per diverse CPU
@@ -19,7 +21,7 @@ void schedSJF(FakeOS* os, void* args_){
   for (int i=0; i<MAX_CPUS; ++i){
     if(os[i].ready.first){
       FakePCB* pcb= (FakePCB*)os[i].ready.first;
-      if(!shortest_pcb || pcb->events.first->duration < shortest_pcb->events.first->duration){
+      if(!shortest_pcb || ((ProcessEvent*)pcb->events.first)->duration<((ProcessEvent*)shortest_pcb->events.first)->duration){
         shortest_pcb=pcb;
       }
     }
@@ -30,7 +32,7 @@ void schedSJF(FakeOS* os, void* args_){
 
   //Prendi la CPU che ospiterà il prossimo processo più breve
   int selected_cpu = -1;
-  for(int i=0; i<MAX_CPU; ++I){
+  for(int i=0; i<MAX_CPUS; ++i){
     if(!os[i].running){
       selected_cpu = i;
       break;
