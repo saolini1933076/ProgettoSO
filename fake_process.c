@@ -1,67 +1,68 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "fake_process.h"
+#include "linked_list.h"
 
 #define LINE_LENGTH 1024
 
-int FakeProcess_load(FakeProcess* p, const char* filename) {
-  FILE* f=fopen(filename, "r");
-  if (! f)
-    return -1;
-  // read the PID
-  char *buffer=NULL;
-  size_t line_length=0;
-  p->pid=-1;
-  p->arrival_time=-1;
-  List_init(&p->events);
-  p->list.prev=p->list.next=0;
-  int num_events=0;
-  while (getline(&buffer, &line_length, f) >0){
-    // got line in buf
-    int pid=-1;
-    int arrival_time=-1;
-    int num_tokens=0;
-    int duration=-1;
-
-    num_tokens=sscanf(buffer, "PROCESS %d %d", &pid, &arrival_time);
-    if (num_tokens==2 && p->pid<0){
-      p->pid=pid;
-      p->arrival_time=arrival_time;
-      goto next_round;
+FakeProcess* FakeProcess_findByPID(int pid, ListHead* process_list) {
+  ListItem* aux = process_list->first;
+  while (aux) {
+    FakeProcess* proc = (FakeProcess*)aux;
+    if (proc->pid == pid) {
+      return proc;
     }
-    num_tokens=sscanf(buffer, "CPU_BURST %d", &duration);
-    if (num_tokens==1){
-      // we create a new event of type cpu burst
-      ProcessEvent* e=(ProcessEvent*) malloc(sizeof(ProcessEvent));
-      e->list.prev=e->list.next=0;
-      e->type=CPU;
-      e->duration=duration;
-      List_pushBack(&p->events, (ListItem*)e);
-      ++num_events;
-      goto next_round;
-    }
-    num_tokens=sscanf(buffer, "IO_BURST %d", &duration);
-    if (num_tokens==1){
-      // we create a new event of type cpu burst
-      ProcessEvent* e=(ProcessEvent*) malloc(sizeof(ProcessEvent));
-      e->list.prev=e->list.next=0;
-      e->type=IO;
-      e->duration=duration;
-      List_pushBack(&p->events, (ListItem*)e);
-      ++num_events;
-      goto next_round;
-    }
-  next_round:
-    //printf("%stokens: %d\n", buffer, num_tokens);
-    ;
+    aux = aux->next;
   }
-  if (buffer)
-    free(buffer);
-  fclose(f);
-  return num_events;
+  return NULL;
 }
 
+int FakeProcess_load(FakeProcess* p, const char* filename) {
+  FILE* f = fopen(filename, "r");
+  if (!f) {
+    return -1;
+  }
 
+  char* buffer = NULL;
+  size_t line_length = 0;
+  p->pid = -1;
+  p->arrival_time = -1;
+  List_init(&p->events);
+
+  while (getline(&buffer, &line_length, f) > 0) {
+    // Process the input line
+    if (sscanf(buffer, "PROCESS %d %d", &p->pid, &p->arrival_time) == 2) {
+      // Verifica che il PID sia unico prima di procedere
+      if (FakeProcess_findByPID(p->pid, &p->events) != NULL) {
+        printf("Process with PID %d already exists, skipping.\n", p->pid);
+        free(buffer);
+        fclose(f);
+        return -1;
+      }
+    } else if (sscanf(buffer, "CPU_BURST %d", &p->arrival_time) == 1) {
+      // Creazione di un nuovo evento di tipo CPU burst
+      ProcessEvent* e = (ProcessEvent*)malloc(sizeof(ProcessEvent));
+      e->list.prev = e->list.next = NULL;
+      e->type = CPU;
+      e->duration = p->arrival_time;
+      List_pushBack(&p->events, (ListItem*)e);
+    } else if (sscanf(buffer, "IO_BURST %d", &p->arrival_time) == 1) {
+      // Creazione di un nuovo evento di tipo IO burst
+      ProcessEvent* e = (ProcessEvent*)malloc(sizeof(ProcessEvent));
+      e->list.prev = e->list.next = NULL;
+      e->type = IO;
+      e->duration = p->arrival_time;
+      List_pushBack(&p->events, (ListItem*)e);
+    }
+  }
+
+  if (buffer) {
+    free(buffer);
+  }
+
+  fclose(f);
+  return List_size(&p->events);
+}
 
 int FakeProcess_save(const FakeProcess* p, const char* filename){
   FILE* f=fopen(filename, "w");
