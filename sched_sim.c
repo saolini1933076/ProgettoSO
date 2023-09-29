@@ -50,8 +50,8 @@ void schedSJF(FakeOS* os, void* args_){
   assert(e->type==CPU);
 
   //Calcola la nuova durata quantistica basata sulla formula
-   int new_quantum = round(args->a * e->duration + (1 - args->a) * args->initial_quantum);
-// Se la durata quantistica è superiore alla durata residua del burst, usala
+   int new_quantu = args->a * e->duration + (1 - args->a) * args->initial_quantum;
+   int new_quantum=round(new_quantu);// Se la durata quantistica è superiore alla durata residua del burst, usala
   if (new_quantum > e->duration) {
     new_quantum = e->duration;
   }
