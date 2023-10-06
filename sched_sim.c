@@ -67,88 +67,73 @@ void schedSJF(FakeOS* os, void* args_){
 }
 
 int main(int argc, char** argv) {
-  int num_cpus = MAX_CPUS;  // Numero di CPU predefinito
-
-  if (argc < 3) {
-    fprintf(stderr, "Utilizzo: %s <numero_cpu> <file_processi>...\n", argv[0]);
-    return 1;
-  }
-
-  num_cpus = atoi(argv[1]);  // Legge il numero di CPU dalla linea di comando
-  if (num_cpus < 1 || num_cpus > MAX_CPUS) {
-    fprintf(stderr, "Numero di CPU non valido. Deve essere compreso tra 1 e %d.\n", MAX_CPUS);
-    return 1;
-  }
-
-  for (int i = 0; i < num_cpus; ++i) {
+  for (int i = 0; i < MAX_CPUS; ++i) {
     FakeOS_init(&os[i]);
   }
 
   SchedSJFArgs sjf_args;
-  sjf_args.a = 0.5;  // Coefficiente per la previsione quantistica
-  sjf_args.initial_quantum = 5;  // Quantum iniziale
-  for (int i = 0; i < num_cpus; ++i) {
+  sjf_args.a = 0.5;  // Coefficient for quantum prediction
+  sjf_args.initial_quantum = 5;  // Initial quantum
+  for (int i = 0; i < MAX_CPUS; ++i) {
     os[i].schedule_args = &sjf_args;
     os[i].schedule_fn = schedSJF;
   }
 
-  for (int i = 2; i < argc; ++i) {
-  FakeProcess new_process;
-  int num_events = FakeProcess_load(&new_process, argv[i]);
-  printf("Caricamento [%s], pid: %d, eventi: %d\n", argv[i], new_process.pid, num_events);
-  if (num_events > 0) {
-    FakeProcess* new_process_ptr = (FakeProcess*)malloc(sizeof(FakeProcess));
-    *new_process_ptr = new_process;
-    new_process_ptr->events.first = NULL;
-    new_process_ptr->events.last = NULL;
+  // Create an array to keep track of the current process index for each CPU
+  int cpu_process_index[MAX_CPUS] = {0};
 
-    for (ListItem* event_item = new_process.events.first; event_item; event_item = event_item->next) {
-      ProcessEvent* event = (ProcessEvent*)event_item;
-      ProcessEvent* new_event = (ProcessEvent*)malloc(sizeof(ProcessEvent));
-      *new_event = *event;
-      List_pushBack(&new_process_ptr->events, (ListItem*)new_event);
-    }
-
-    int cpu_index = (i - 2) % num_cpus;
-    List_pushBack(&os[cpu_index].processes, (ListItem*)new_process_ptr);
-    
-    // Aggiungi un evento fittizio per il processo se non ne ha
-    if (!new_process_ptr->events.first) {
-      ProcessEvent* dummy_event = (ProcessEvent*)malloc(sizeof(ProcessEvent));
-      dummy_event->list.prev = dummy_event->list.next = NULL;
-      dummy_event->type = CPU;
-      dummy_event->duration = 1; // Durata minima, solo per evitare il "process without events"
-      List_pushBack(&new_process_ptr->events, (ListItem*)dummy_event);
+  // Load and distribute processes to CPUs
+  for (int i = 1; i < argc; ++i) {
+    FakeProcess new_process;
+    int num_events = FakeProcess_load(&new_process, argv[i]);
+    printf("Loading [%s], pid: %d, events: %d\n", argv[i], new_process.pid, num_events);
+    if (num_events > 0) {
+      FakeProcess* new_process_ptr = (FakeProcess*)malloc(sizeof(FakeProcess));
+      *new_process_ptr = new_process;
+      int cpu_index = i % MAX_CPUS;  // Distribute processes to CPUs in a round-robin manner
+      List_pushBack(&os[cpu_index].processes, (ListItem*)new_process_ptr);
     }
   }
-}
 
-  for (int time = 0;; ++time) {
-    printf("************** TEMPO: %08d **************\n", time);
-    int any_active = 0;
+  int all_idle = 0;
+  int time = 0;
 
-    for (int i = 0; i < num_cpus; ++i) {
-      FakeOS_simStep(&os[i]);
+  while (!all_idle) {
+    printf("************** TIME: %08d **************\n", time);
+    all_idle = 1;
 
+    for (int i = 0; i < MAX_CPUS; ++i) {
       if (os[i].running || os[i].ready.first || os[i].waiting.first || os[i].processes.first) {
-        any_active = 1;
+        all_idle = 0;
+
+        // Check if the current CPU has finished its process
+        if (!os[i].running) {
+          // Find the next process for this CPU in a round-robin manner
+          int cpu_index = i;
+          FakeProcess* next_process = NULL;
+          while (!next_process) {
+            next_process = (FakeProcess*)List_getByIndex(&os[cpu_index].processes, cpu_process_index[cpu_index]);
+            cpu_process_index[cpu_index] = (cpu_process_index[cpu_index] + 1) % List_getSize(&os[cpu_index].processes);
+            if (next_process && next_process->arrival_time > time) {
+              // Process hasn't arrived yet, skip it for now
+              next_process = NULL;
+            }
+          }
+
+          // Create a PCB for the process and add it to the ready queue
+          if (next_process) {
+            FakePCB* new_pcb = (FakePCB*)malloc(sizeof(FakePCB));
+            new_pcb->pid = next_process->pid;
+            new_pcb->events = next_process->events;
+            List_pushBack(&os[cpu_index].ready, (ListItem*)new_pcb);
+          }
+        }
+
+        FakeOS_simStep(&os[i]);
       }
     }
 
-    if (!any_active)
-      break;
-  }
-
-  // Deallocazione della memoria degli eventi processi
-  for (int i = 0; i < num_cpus; ++i) {
-    for (ListItem* process_item = os[i].processes.first; process_item; process_item = process_item->next) {
-      FakeProcess* process = (FakeProcess*)process_item;
-      while (process->events.first) {
-        ProcessEvent* event = (ProcessEvent*)List_popFront(&process->events);
-        free(event);
-      }
-      free(process);
-    }
+    time++;
   }
 
   return 0;
