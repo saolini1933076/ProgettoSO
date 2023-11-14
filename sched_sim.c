@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <math.h>
+#include <stdint.h> 
+#include <stddef.h>
 #include "fake_os.h"
 #include "fake_process.h"
 #include "linked_list.h"
@@ -112,8 +114,10 @@ int main(int argc, char** argv) {
           int cpu_index = i;
           FakeProcess* next_process = NULL;
           while (!next_process) {
-            next_process = (FakeProcess*)List_getByIndex(&os[cpu_index].processes, cpu_process_index[cpu_index]);
-            cpu_process_index[cpu_index] = (cpu_process_index[cpu_index] + 1) % List_getSize(&os[cpu_index].processes);
+            next_process = (FakeProcess*)(uintptr_t)List_getByIndex(&os[cpu_index].processes, cpu_process_index[cpu_index]);
+
+            int size= List_size(&os[cpu_index].processes);
+            cpu_process_index[cpu_index] = (cpu_process_index[cpu_index] + 1) % size;
             if (next_process && next_process->arrival_time > time) {
               // Process hasn't arrived yet, skip it for now
               next_process = NULL;
@@ -137,4 +141,5 @@ int main(int argc, char** argv) {
   }
 
   return 0;
+}
 }
