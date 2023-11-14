@@ -1,5 +1,7 @@
 #include "linked_list.h"
 #include <assert.h>
+#include <stddef.h>
+
 
 void List_init(ListHead* head) {
   head->first=0;
@@ -91,4 +93,17 @@ ListItem* List_popFront(ListHead* head) {
 //AGGIUNTA LA FUNZIONE
 int List_size(const ListHead* head) {
   return head->size;
+}
+
+void* List_getByIndex(ListHead* list, int index) {
+    if (list == NULL || index < 0 || index >= list->size) {
+        return NULL;  // Indice non valido o lista vuota
+    }
+
+    ListItem* current = list->first;
+    for (int i = 0; i < index; ++i) {
+        current = current->next;
+    }
+
+    return current;
 }
