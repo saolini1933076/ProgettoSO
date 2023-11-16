@@ -2,6 +2,7 @@
 #include "linked_list.h"
 #pragma once
 
+struct FakeOS;  // Dichiarazione forward di FakeOS
 
 typedef struct {
   ListItem list;
@@ -9,20 +10,18 @@ typedef struct {
   ListHead events;
 } FakePCB;
 
-struct FakeOS;
-typedef void (*ScheduleFn)(struct FakeOS* os, void* args);
-
-typedef struct FakeOS{
+typedef struct FakeOS {
   FakePCB* running;
   ListHead ready;
   ListHead waiting;
   int timer;
-  ScheduleFn schedule_fn;
+  void (*schedule_fn)(struct FakeOS* os, void* args);
   void* schedule_args;
-
   ListHead processes;
+  int num_cpus;  
+  struct FakeOS** cpus;
 } FakeOS;
 
-void FakeOS_init(FakeOS* os);
+void FakeOS_init(FakeOS* os, int num_cpus);  // Rimuovi 'struct' dai parametri
 void FakeOS_simStep(FakeOS* os);
 void FakeOS_destroy(FakeOS* os);
