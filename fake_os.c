@@ -4,14 +4,22 @@
 
 #include "fake_os.h"
 
-void FakeOS_init(FakeOS* os) {
-  os->running=0;
+void FakeOS_init(FakeOS* os, int num_cpus) {
+  os->running = NULL;
   List_init(&os->ready);
   List_init(&os->waiting);
   List_init(&os->processes);
-  os->timer=0;
-  os->schedule_fn=0;
+  os->timer = 0;
+  os->schedule_fn = NULL;
+  os->schedule_args = NULL;
+
+  // Initialize the array of CPUs
+  os->num_cpus = num_cpus;
+  for (int i = 0; i < num_cpus; ++i) {
+    os->cpus[i] = NULL;
+  }
 }
+
 
 void FakeOS_createProcess(FakeOS* os, FakeProcess* p) {
   // sanity check
