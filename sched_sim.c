@@ -17,7 +17,7 @@ typedef struct {
 
 void schedSJF(FakeOS* os, void* args_) {
   SchedSJFArgs* args = (SchedSJFArgs*)args_;
-  // Scansiona le CPU e trova la CPU con il prossimo processo più breve pronto
+
   FakePCB* shortest_pcb = NULL;
   for (int i = 0; i < MAX_CPUS; ++i) {
     if (os[i].ready.first) {
@@ -28,10 +28,8 @@ void schedSJF(FakeOS* os, void* args_) {
     }
   }
 
-  // Se non ci sono processi in ready, esci
   if (!shortest_pcb) return;
 
-  // Prendi la CPU che ospiterà il prossimo processo più breve
   int selected_cpu = -1;
   for (int i = 0; i < MAX_CPUS; ++i) {
     if (!os[i].running) {
@@ -40,24 +38,22 @@ void schedSJF(FakeOS* os, void* args_) {
     }
   }
 
-  // Se non ci sono CPU libere, non fare nulla
   if (selected_cpu == -1) {
     return;
   }
+
   FakePCB* pcb = shortest_pcb;
   os[selected_cpu].running = pcb;
 
   ProcessEvent* e = (ProcessEvent*)pcb->events.first;
   assert(e->type == CPU);
+  int nq=args->a * e->duration + (1 - args->a) * args->initial_quantum;
+  int new_quantum = round(nq);
 
-  // Calcola la nuova durata quantistica basata sulla formula
-  int new_quantum = round(args->a * e->duration + (1 - args->a) * args->initial_quantum);
-  // Se la durata quantistica è superiore alla durata residua del burst, usala
   if (new_quantum > e->duration) {
     new_quantum = e->duration;
   }
 
-  // Aggiungi un nuovo evento CPU con la nuova durata quantistica
   ProcessEvent* qe = (ProcessEvent*)malloc(sizeof(ProcessEvent));
   qe->list.prev = qe->list.next = NULL;
   qe->type = CPU;
@@ -65,11 +61,47 @@ void schedSJF(FakeOS* os, void* args_) {
   List_pushFront(&pcb->events, (ListItem*)qe);
 }
 
+void cleanup() {
+  for (int i = 0; i < MAX_CPUS; ++i) {
+    while (os[i].processes.first) {
+      FakeProcess* process = (FakeProcess*)List_popFront(&os[i].processes);
+      List_init(&process->events);
+      free(process);
+    }
+
+    while (os[i].ready.first) {
+      FakePCB* pcb = (FakePCB*)List_popFront(&os[i].ready);
+      List_init(&pcb->events);
+      free(pcb);
+    }
+
+    while (os[i].waiting.first) {
+      FakePCB* pcb = (FakePCB*)List_popFront(&os[i].waiting);
+      List_init(&pcb->events);
+      free(pcb);
+    }
+
+    if (os[i].running) {
+      List_init(&os[i].running->events);
+      free(os[i].running);
+    }
+  }
+}
+
 int main(int argc, char** argv) {
-  int num_cpus = MAX_CPUS;
+  if (argc < 2) {
+    fprintf(stderr, "Usage: %s <num_cpus> <process_file1> <process_file2> ...\n", argv[0]);
+    return -1;
+  }
+
+  int num_cpus = atoi(argv[1]);
+  if (num_cpus <= 0 || num_cpus > MAX_CPUS) {
+    fprintf(stderr, "Number of CPUs must be between 1 and %d\n", MAX_CPUS);
+    return -1;
+  }
 
   for (int i = 0; i < num_cpus; ++i) {
-    FakeOS_init(&os[i], num_cpus);
+    FakeOS_init(&os[i], i);
   }
 
   SchedSJFArgs sjf_args;
@@ -81,35 +113,32 @@ int main(int argc, char** argv) {
     os[i].schedule_fn = schedSJF;
   }
 
-  for (int i = 1; i < argc; ++i) {
+  for (int i = 2; i < argc; ++i) {
     FakeProcess new_process;
     int num_events = FakeProcess_load(&new_process, argv[i]);
     printf("Caricamento [%s], pid: %d, eventi: %d\n", argv[i], new_process.pid, num_events);
     if (num_events > 0) {
-      FakeProcess* new_process_ptr = (FakeProcess*)malloc(sizeof(FakeProcess));
-      *new_process_ptr = new_process;
-      int cpu_index = (i - 1) % num_cpus;  // Assegna i processi in modo ciclico alle CPU
-      List_pushBack(&os[cpu_index].processes, (ListItem*)new_process_ptr);
+      FakePCB* new_pcb = (FakePCB*)malloc(sizeof(FakePCB));
+      new_pcb->list.prev = new_pcb->list.next = NULL;
+      new_pcb->pid = new_process.pid;
+      new_pcb->events = new_process.events;
+      List_pushBack(&os[(i - 2) % num_cpus].ready, (ListItem*)new_pcb);
     }
   }
 
-  for (int time = 0;; ++time) {
-    printf("************** TEMPO: %08d **************\n", time);
+  int all_idle = 0;
+  while (!all_idle) {
+    printf("************** TEMPO: %08d **************\n", os[0].timer);
+    all_idle = 1;
     for (int i = 0; i < num_cpus; ++i) {
       FakeOS_simStep(&os[i]);
-    }
-
-    // Esci se tutte le CPU sono inattive e non ci sono processi in attesa
-    int all_idle = 1;
-    for (int i = 0; i < num_cpus; ++i) {
       if (os[i].running || os[i].ready.first || os[i].waiting.first || os[i].processes.first) {
         all_idle = 0;
-        break;
       }
     }
-    if (all_idle)
-      break;
   }
+
+  cleanup(); // Libera la memoria allocata dinamicamente
 
   return 0;
 }
