@@ -1,144 +1,113 @@
+#include "fake_os.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
-#include <math.h>
-#include "fake_os.h"
-#include "fake_process.h"
-#include "linked_list.h"
 
-#define MAX_CPUS 4
+#define DECAY_COEFFICIENT_POSITION 1
+#define SCHEDULING_POLICY_POSITION 2
+#define QUANTUM_POSITION 3
+#define PROCESS_FILES_START_POSITION 4
 
-FakeOS os[MAX_CPUS];
+FakeOS os;
 
-typedef struct {
-  double a;
-  int initial_quantum;
-} SchedSJFArgs;
+typedef struct { 
+  int quantum;
+} SchedArgs;
 
-void schedSJF(FakeOS* os, void* args_) {
-  SchedSJFArgs* args = (SchedSJFArgs*)args_;
-
-  FakePCB* shortest_pcb = NULL;
-  for (int i = 0; i < MAX_CPUS; ++i) {
-    if (os[i].ready.first) {
-      FakePCB* pcb = (FakePCB*)os[i].ready.first;
-      if (!shortest_pcb || ((ProcessEvent*)pcb->events.first)->duration < ((ProcessEvent*)shortest_pcb->events.first)->duration) {
-        shortest_pcb = pcb;
-      }
+FakePCB* selectFakePCB(ListHead* listHead) {
+    if (List_empty(listHead)) {
+        return NULL;
     }
-  }
 
-  if (!shortest_pcb) return;
+    ListItem* currentListItem = listHead->first;
+    FakePCB* minBurstPCB = (FakePCB*)currentListItem;
 
-  int selected_cpu = -1;
-  for (int i = 0; i < MAX_CPUS; ++i) {
-    if (!os[i].running) {
-      selected_cpu = i;
-      break;
+    while (currentListItem != NULL) {
+        FakePCB* pcb = (FakePCB*)currentListItem;
+        if (pcb->burst_prediction < minBurstPCB->burst_prediction) {
+            minBurstPCB = pcb;
+        }
+        currentListItem = currentListItem->next;
     }
-  }
-
-  if (selected_cpu == -1) {
-    return;
-  }
-
-  FakePCB* pcb = shortest_pcb;
-  os[selected_cpu].running = pcb;
-
-  ProcessEvent* e = (ProcessEvent*)pcb->events.first;
-  assert(e->type == CPU);
-  int nq=args->a * e->duration + (1 - args->a) * args->initial_quantum;
-  int new_quantum = round(nq);
-
-  if (new_quantum > e->duration) {
-    new_quantum = e->duration;
-  }
-
-  ProcessEvent* qe = (ProcessEvent*)malloc(sizeof(ProcessEvent));
-  qe->list.prev = qe->list.next = NULL;
-  qe->type = CPU;
-  qe->duration = new_quantum;
-  List_pushFront(&pcb->events, (ListItem*)qe);
+    return minBurstPCB;
 }
 
-void cleanup() {
-  for (int i = 0; i < MAX_CPUS; ++i) {
-    while (os[i].processes.first) {
-      FakeProcess* process = (FakeProcess*)List_popFront(&os[i].processes);
-      List_init(&process->events);
-      free(process);
-    }
+void customSchedSJF(FakeOS* fakeOS, void* arguments_) {
+    SchedArgs* customArgs = (SchedArgs*)arguments_;
 
-    while (os[i].ready.first) {
-      FakePCB* pcb = (FakePCB*)List_popFront(&os[i].ready);
-      List_init(&pcb->events);
-      free(pcb);
-    }
+    // Look for the first process in ready
+    // If none, return
 
-    while (os[i].waiting.first) {
-      FakePCB* pcb = (FakePCB*)List_popFront(&os[i].waiting);
-      List_init(&pcb->events);
-      free(pcb);
-    }
+    if (List_empty(&fakeOS->ready))
+        return;
 
-    if (os[i].running) {
-      List_init(&os[i].running->events);
-      free(os[i].running);
+    while (!List_empty(&fakeOS->ready) && List_size(&fakeOS->running) < fakeOS->num_cpus) {
+        FakePCB* selectedPCB = selectFakePCB(&fakeOS->ready);
+        FakePCB* verification = (FakePCB*)List_detach(&fakeOS->ready, (ListItem*)selectedPCB);
+        if (!verification) exit(-1);
+        selectedPCB->arrival_time = fakeOS->timer;
+        List_pushFront(&fakeOS->running, (ListItem*)selectedPCB);
+
+        assert(selectedPCB->events.first);
+        ProcessEvent* event = (ProcessEvent*)selectedPCB->events.first;
+        assert(event->type == CPU);
+
+        // Look at the first event
+        // If duration > quantum
+        // Push front in the list of events a CPU event of duration quantum
+        // Alter the duration of the old event subtracting quantum
+        if (event->duration > customArgs->quantum) {
+            ProcessEvent* quantumEvent = (ProcessEvent*)malloc(sizeof(ProcessEvent));
+            quantumEvent->list.prev = quantumEvent->list.next = 0;
+            quantumEvent->type = CPU;
+            quantumEvent->duration = customArgs->quantum;
+            event->duration -= customArgs->quantum;
+            List_pushFront(&selectedPCB->events, (ListItem*)quantumEvent);
+        }
     }
-  }
 }
 
 int main(int argc, char** argv) {
-  if (argc < 2) {
-    fprintf(stderr, "Usage: %s <num_cpus> <process_file1> <process_file2> ...\n", argv[0]);
-    return -1;
-  }
+    FakeOS customOS;
+    FakeOS_init(&customOS);
+    SchedArgs customSchedArgs;
 
-  int num_cpus = atoi(argv[1]);
-  if (num_cpus <= 0 || num_cpus > MAX_CPUS) {
-    fprintf(stderr, "Number of CPUs must be between 1 and %d\n", MAX_CPUS);
-    return -1;
-  }
+    // Default quantum for preemption
+    customSchedArgs.quantum = 10;  // Default quantum value
 
-  for (int i = 0; i < num_cpus; ++i) {
-    FakeOS_init(&os[i], i);
-  }
-
-  SchedSJFArgs sjf_args;
-  sjf_args.a = 0.5;
-  sjf_args.initial_quantum = 5;
-
-  for (int i = 0; i < num_cpus; ++i) {
-    os[i].schedule_args = &sjf_args;
-    os[i].schedule_fn = schedSJF;
-  }
-
-  for (int i = 2; i < argc; ++i) {
-    FakeProcess new_process;
-    int num_events = FakeProcess_load(&new_process, argv[i]);
-    printf("Caricamento [%s], pid: %d, eventi: %d\n", argv[i], new_process.pid, num_events);
-    if (num_events > 0) {
-      FakePCB* new_pcb = (FakePCB*)malloc(sizeof(FakePCB));
-      new_pcb->list.prev = new_pcb->list.next = NULL;
-      new_pcb->pid = new_process.pid;
-      new_pcb->events = new_process.events;
-      List_pushBack(&os[(i - 2) % num_cpus].ready, (ListItem*)new_pcb);
+    if (argc <= PROCESS_FILES_START_POSITION) {
+        printf("You must provide at least one process file.\n");
+        exit(-1);
     }
-  }
 
-  int all_idle = 0;
-  while (!all_idle) {
-    printf("************** TEMPO: %08d **************\n", os[0].timer);
-    all_idle = 1;
-    for (int i = 0; i < num_cpus; ++i) {
-      FakeOS_simStep(&os[i]);
-      if (os[i].running || os[i].ready.first || os[i].waiting.first || os[i].processes.first) {
-        all_idle = 0;
-      }
+    assert(atof(argv[DECAY_COEFFICIENT_POSITION]) != 0 && atof(argv[DECAY_COEFFICIENT_POSITION]) <= 1 &&
+           "You have to digit a number between 0 and 1");
+    customOS.decay_coefficient = atof(argv[DECAY_COEFFICIENT_POSITION]);
+
+    customOS.num_cpus = /* Get the number of available CPUs in the system */ 4; // Change accordingly
+
+    customOS.schedule_args = &customSchedArgs;
+    customOS.schedule_fn = customSchedSJF;
+
+    if (argc > QUANTUM_POSITION) {
+        assert(atoi(argv[QUANTUM_POSITION]) != 0 && *argv[QUANTUM_POSITION] != '0' &&
+               "You must insert a positive integer value for the quantum");
+        customSchedArgs.quantum = atoi(argv[QUANTUM_POSITION]);
     }
-  }
 
-  cleanup(); // Libera la memoria allocata dinamicamente
-
-  return 0;
+    for (int i = PROCESS_FILES_START_POSITION; i < argc; ++i) {
+        FakeProcess newFakeProcess;
+        int numberOfEvents = FakeProcess_load(&newFakeProcess, argv[i]);
+        if (numberOfEvents) {
+            FakeProcess* newFakeProcessPtr = (FakeProcess*)malloc(sizeof(FakeProcess));
+            *newFakeProcessPtr = newFakeProcess;
+            List_pushBack(&customOS.processes, (ListItem*)newFakeProcessPtr);
+        }
+    }
+    printf("num processes in queue %d\n", customOS.processes.size);
+    while (customOS.running.first || customOS.ready.first || customOS.waiting.first || customOS.processes.first) {
+        FakeOS_simStep(&customOS);
+    }
+    FakeOS_destroy(&customOS);
 }
