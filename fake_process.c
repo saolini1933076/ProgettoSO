@@ -4,7 +4,7 @@
 
 #define LINE_LENGTH 1024
 
-int FakeProcess_load(FakeProcess* p, const char* filename) {
+int FakeProcess_load(FakeProcess* p, const char* filename) { 
   FILE* f=fopen(filename, "r");
   if (! f)
     return -1;
@@ -14,7 +14,7 @@ int FakeProcess_load(FakeProcess* p, const char* filename) {
   p->pid=-1;
   p->arrival_time=-1;
   List_init(&p->events);
-  p->list.prev=p->list.next=0;
+  p->list.prev=p->list.next=0; //in the queue of processes
   int num_events=0;
   while (getline(&buffer, &line_length, f) >0){
     // got line in buf
@@ -23,11 +23,11 @@ int FakeProcess_load(FakeProcess* p, const char* filename) {
     int num_tokens=0;
     int duration=-1;
 
-    num_tokens=sscanf(buffer, "PROCESS %d %d", &pid, &arrival_time);
+    num_tokens=sscanf(buffer, "PROCESS %d %d", &pid, &arrival_time); 
     if (num_tokens==2 && p->pid<0){
       p->pid=pid;
       p->arrival_time=arrival_time;
-      goto next_round;
+      goto next_round; //like else if
     }
     num_tokens=sscanf(buffer, "CPU_BURST %d", &duration);
     if (num_tokens==1){
@@ -36,7 +36,7 @@ int FakeProcess_load(FakeProcess* p, const char* filename) {
       e->list.prev=e->list.next=0;
       e->type=CPU;
       e->duration=duration;
-      List_pushBack(&p->events, (ListItem*)e);
+      List_pushBack(&p->events, (ListItem*)e); 
       ++num_events;
       goto next_round;
     }
@@ -52,18 +52,18 @@ int FakeProcess_load(FakeProcess* p, const char* filename) {
       goto next_round;
     }
   next_round:
-    //printf("%stokens: %d\n", buffer, num_tokens);
+   
     ;
   }
   if (buffer)
-    free(buffer);
+    free(buffer); //clean up
   fclose(f);
   return num_events;
 }
 
 
 
-int FakeProcess_save(const FakeProcess* p, const char* filename){
+int FakeProcess_save(const FakeProcess* p, const char* filename){ 
   FILE* f=fopen(filename, "w");
   if (! f)
     return -1;
