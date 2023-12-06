@@ -1,5 +1,36 @@
 #include "linked_list.h"
+#include "fake_os.h"
+#include <stdio.h>
 #include <assert.h>
+
+// Macro per iterare attraverso gli elementi di una lista
+#define List_forEach(TYPE, VAR, HEAD) \
+    for (TYPE* VAR = NULL; (VAR = (TYPE*)List_next(HEAD, (ListItem*)VAR)) != NULL;)
+
+// Funzione per ottenere il primo elemento di una lista
+void* List_first(ListHead* head, size_t offset) {
+    if (List_empty(head)) {
+        return NULL;
+    }
+    return (void*)((char*)head->first - offset);
+}
+
+
+int List_empty(ListHead* head) {
+  return head->first == 0;
+}
+
+int List_size(ListHead* head) {
+  int size = 0;
+  ListItem* item = head->first;
+  
+  while (item) {
+    size++;
+    item = item->next;
+  }
+  
+  return size;
+}
 
 void List_init(ListHead* head) {
   head->first=0;
